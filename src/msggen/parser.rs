@@ -7,7 +7,7 @@ use nom::{
   character::complete::{
     alphanumeric1, char, digit1, line_ending, not_line_ending, one_of, space0,
   },
-  combinator::{eof, map, map_res, opt, recognize, value},
+  combinator::{eof, map, all_consuming, map_res, opt, recognize, value},
   error::{dbg_dmp, ParseError},
   multi::{many0, many1},
   sequence::{delimited, pair, preceded, terminated},
@@ -70,7 +70,12 @@ pub enum Value {
 }
 
 #[allow(clippy::type_complexity)]
-pub fn msg_spec(i: &str) -> IResult<&str, Vec<(Option<Item>, Option<Comment>)>> {
+pub fn msg_spec(i: &str) -> IResult<&str, MsgSpec> {
+  all_consuming(msg_spec_internal).parse(i)
+}
+
+#[allow(clippy::type_complexity)]
+fn msg_spec_internal(i: &str) -> IResult<&str, MsgSpec> {
   many0(line).parse(i)
 }
 
@@ -276,7 +281,7 @@ fn item_test() {
 }
 
 #[test]
-fn spec_test() {
+fn msg_spec_test() {
   assert_eq!(msg_spec("\n"), Ok(("", vec![(None, None)])));
   assert_eq!(msg_spec(""), Ok(("", vec![])));
   // assert_eq!(
@@ -288,4 +293,5 @@ fn spec_test() {
     msg_spec("# \n"),
     Ok(("", vec![(None, Some(Comment("# ".to_string())))]))
   );
+  assert!(msg_spec("---\n").is_err());
 }
