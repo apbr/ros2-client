@@ -70,12 +70,26 @@ pub enum Value {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ActionSpec {
+  pub goal: MsgSpec,
+  pub result: MsgSpec,
+  pub feedback: MsgSpec,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct ServiceSpec {
   pub request: MsgSpec,
   pub response: MsgSpec,
 }
 
 pub type MsgSpec = Vec<(Option<Item>, Option<Comment>)>;
+
+pub fn action_spec(i: &str) -> IResult<&str, ActionSpec> {
+  let (i, goal) = terminated(msg_spec_internal, separator).parse(i)?;
+  let (i, result) = terminated(msg_spec_internal, separator).parse(i)?;
+  let (i, feedback) = all_consuming(msg_spec_internal).parse(i)?;
+  Ok((i, ActionSpec { goal, result, feedback }))
+}
 
 pub fn srv_spec(i: &str) -> IResult<&str, ServiceSpec> {
   let (i, request) = terminated(msg_spec_internal, separator).parse(i)?;
@@ -355,5 +369,57 @@ int64 sum
         }), None),
       ],
     }))
+  );
+}
+
+#[test]
+fn action_spec_test() {
+  let action = "# Goal
+int32 order
+---
+# Result
+int32[] sequence
+---
+# Feedback
+int32[] sequence
+";
+  pretty_assertions::assert_eq!(
+    action_spec(action),
+    Ok(("", ActionSpec {
+      goal: vec![
+          (None, Some(Comment("# Goal".to_string()))),
+        (Some(Item::Field {
+          type_name: TypeName {
+            base: BaseTypeName::Primitive { name: "int32".to_string() },
+            array_spec: None,
+          },
+          field_name: "order".to_string(),
+          default_value: None,
+        }), None),
+      ],
+      result: vec![
+          (None, Some(Comment("# Result".to_string()))),
+        (Some(Item::Field {
+          type_name: TypeName {
+            base: BaseTypeName::Primitive { name: "int32".to_string() },
+            array_spec: Some(ArraySpecifier::Unbounded),
+          },
+          field_name: "sequence".to_string(),
+          default_value: None,
+        }), None),
+      ],
+      feedback: vec![
+          (None, Some(Comment("# Feedback".to_string()))),
+        (Some(Item::Field {
+          type_name: TypeName {
+            base: BaseTypeName::Primitive { name: "int32".to_string() },
+            array_spec: Some(ArraySpecifier::Unbounded),
+          },
+          field_name: "sequence".to_string(),
+          default_value: None,
+        }), None)
+      ],
+    }))
+
   );
 }
