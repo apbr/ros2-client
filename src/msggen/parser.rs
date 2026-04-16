@@ -69,6 +69,26 @@ pub enum Value {
   String(Vec<u8>), // ROS does not do Unicode
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ServiceSpec {
+  pub request: MsgSpec,
+  pub response: MsgSpec,
+}
+
+pub type MsgSpec = Vec<(Option<Item>, Option<Comment>)>;
+
+pub fn srv_spec(i: &str) -> IResult<&str, ServiceSpec> {
+  let (i, request) = terminated(msg_spec_internal, separator).parse(i)?;
+  let (i, response) = all_consuming(msg_spec_internal).parse(i)?;
+  Ok((i, ServiceSpec { request, response}))
+}
+
+/// Matches the separator that divides request/response in srv and goal/result/feedback in action
+/// specs.
+fn separator(i: &str) -> IResult<&str, ()> {
+    value((), pair(tag("---"), line_ending)).parse(i)
+}
+
 #[allow(clippy::type_complexity)]
 pub fn msg_spec(i: &str) -> IResult<&str, MsgSpec> {
   all_consuming(msg_spec_internal).parse(i)
@@ -294,4 +314,46 @@ fn msg_spec_test() {
     Ok(("", vec![(None, Some(Comment("# ".to_string())))]))
   );
   assert!(msg_spec("---\n").is_err());
+}
+
+#[test]
+fn service_spec_test() {
+  let srv = "int64 a
+int64 b
+---
+int64 sum
+";
+  assert_eq!(
+    srv_spec(srv),
+    Ok(("", ServiceSpec {
+      request: vec![
+        (Some(Item::Field {
+          type_name: TypeName {
+            base: BaseTypeName::Primitive { name: "int64".to_string() },
+            array_spec: None,
+          },
+          field_name: "a".to_string(),
+          default_value: None,
+        }), None),
+        (Some(Item::Field {
+          type_name: TypeName {
+            base: BaseTypeName::Primitive { name: "int64".to_string() },
+            array_spec: None,
+          },
+          field_name: "b".to_string(),
+          default_value: None,
+        }), None),
+      ],
+      response: vec![
+        (Some(Item::Field {
+          type_name: TypeName {
+            base: BaseTypeName::Primitive { name: "int64".to_string() },
+            array_spec: None,
+          },
+          field_name: "sum".to_string(),
+          default_value: None,
+        }), None),
+      ],
+    }))
+  );
 }
