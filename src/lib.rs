@@ -86,6 +86,8 @@ pub mod ros_time;
 pub mod rosout;
 pub mod service;
 
+pub mod msggen;
+
 pub mod steady_time;
 mod wide_string;
 

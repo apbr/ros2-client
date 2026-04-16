@@ -8,11 +8,7 @@ use std::{
 
 use clap::{Arg, Command}; // command line argument processing
 
-mod parser;
-mod stringparser;
-//mod gen;
-
-use parser::{ArraySpecifier, BaseTypeName, Comment, Item, TypeName, Value};
+use ros2_client::msggen::parser::{ArraySpecifier, BaseTypeName, Comment, Item, TypeName, Value};
 
 fn main() -> io::Result<()> {
   //println!("msggen");
@@ -79,7 +75,7 @@ fn main() -> io::Result<()> {
 
     let input = io::read_to_string(input_file)?;
 
-    let msg = parser::msg_spec(&input).unwrap_or_else(|e| panic!("Parse error: {:?}", e));
+    let msg = ros2_client::msggen::parser::msg_spec(&input).unwrap_or_else(|e| panic!("Parse error: {:?}", e));
 
     match arg_matches.get_one::<String>("output") {
       None => {
@@ -138,7 +134,7 @@ fn main() -> io::Result<()> {
 
       for (ros2type, type_def) in &pkg.types {
         println!("  type {ros2type:?}");
-        let msg = parser::msg_spec(type_def).unwrap_or_else(|e| panic!("Parse error: {:?}", e));
+        let msg = ros2_client::msggen::parser::msg_spec(type_def).unwrap_or_else(|e| panic!("Parse error: {:?}", e));
         // TODO: msg.0 should be empty string here, warn if not.
         print_struct_definition(&mut out_file, ros2type, &msg.1)?;
       }
