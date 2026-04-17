@@ -53,6 +53,11 @@ pub fn print_struct_definition<W: io::Write>(
   writeln!(w)?;
   writeln!(w, "#[derive(Debug, Serialize, Deserialize)]")?;
   writeln!(w, "pub struct {name} {{")?;
+  // We only produce defaults for messages where each field has a default value, otherwise we would
+  // need to define constructors instead of just implementing Default.
+  // If we encounter any field without a default value, we set `default` to None, and skip all
+  // default values.
+  let mut default = Some(Vec::new());
   for (item, comment) in got_field {
     match (item, comment) {
       (None, None) => writeln!(w)?, // empty line
@@ -63,10 +68,26 @@ pub fn print_struct_definition<W: io::Write>(
           Item::Field {
             type_name,
             field_name,
-            ..
+            default_value,
           } => {
             let rust_type = translate_type(type_name)?;
             write!(w, "{} : {}, ", escape_keywords(field_name), rust_type)?;
+            if let Some(default) = default.as_mut() {
+              if let Some(default_value) = default_value {
+                let rust_value = translate_value(default_value);
+                default.push(format!("{}: {rust_value}", escape_keywords(field_name)));
+              } else {
+                if !default.is_empty() {
+                  write!(w, "// no default value for field {field_name}, skipping previous defaults")?;
+                  default.clear();
+                }
+              }
+            } else if default_value.is_some() {
+              write!(
+                w,
+                "// no default value for a previous field, skipping default value for field {field_name}"
+              )?;
+            }
           }
           Item::Constant { const_name, .. } => write!(
             w,
@@ -83,6 +104,19 @@ pub fn print_struct_definition<W: io::Write>(
     }
   }
   writeln!(w, "}}")?;
+  if let Some(default) = default {
+    if !default.is_empty() {
+      writeln!(w, "impl Default for {name} {{")?;
+      writeln!(w, "  fn default() -> Self {{")?;
+      writeln!(w, "    Self {{")?;
+      for field in default {
+        writeln!(w, "      {field},")?;
+      }
+      writeln!(w, "    }}")?;
+      writeln!(w, "  }}")?;
+      writeln!(w, "}}")?;
+    }
+  }
   Ok(())
 }
 
