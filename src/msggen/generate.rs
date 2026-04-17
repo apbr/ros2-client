@@ -50,7 +50,6 @@ pub fn print_struct_definition<W: io::Write>(
     writeln!(w, "}}")?;
   }
 
-  writeln!(w)?;
   writeln!(w, "#[derive(Debug, Serialize, Deserialize)]")?;
   writeln!(w, "pub struct {name} {{")?;
   // We only produce defaults for messages where each field has a default value, otherwise we would
