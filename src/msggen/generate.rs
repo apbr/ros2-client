@@ -17,6 +17,7 @@ pub fn print_struct_definition<W: io::Write>(
     .iter()
     .skip_while(|p| p.0.as_ref().is_none_or(is_not_field));
 
+  let mut got_first_constant = false;
   for (item, comment) in not_yet {
     match (item, comment) {
       (None, None) => writeln!(w)?, // empty line
@@ -31,17 +32,22 @@ pub fn print_struct_definition<W: io::Write>(
           } => {
             let rust_type = translate_type(type_name)?;
             let rust_value = translate_value(value);
-            write!(w, "pub const {const_name} : {rust_type} = {rust_value};")?;
+            if !got_first_constant {
+              writeln!(w, "impl {name} {{")?;
+            }
+            got_first_constant = true;
+            writeln!(w, "  pub const {const_name}: {rust_type} = {rust_value};")?;
           }
         }
 
         if let Some(Comment(c)) = comment_opt {
           writeln!(w, "// {c}")?;
-        } else {
-          writeln!(w)?;
         }
       }
     }
+  }
+  if got_first_constant {
+    writeln!(w, "}}")?;
   }
 
   writeln!(w)?;
