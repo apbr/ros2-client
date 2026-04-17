@@ -31,7 +31,7 @@ pub fn print_struct_definition<W: io::Write>(
             value,
           } => {
             let rust_type = translate_type(type_name)?;
-            let rust_value = translate_value(value);
+            let rust_value = translate_value(value, &rust_type);
             if !got_first_constant {
               writeln!(w, "impl {name} {{")?;
             }
@@ -74,7 +74,7 @@ pub fn print_struct_definition<W: io::Write>(
             write!(w, "{} : {}, ", escape_keywords(field_name), rust_type)?;
             if let Some(default) = default.as_mut() {
               if let Some(default_value) = default_value {
-                let rust_value = translate_value(default_value);
+                let rust_value = translate_value(default_value, &rust_type);
                 default.push(format!("{}: {rust_value}", escape_keywords(field_name)));
               } else {
                 if !default.is_empty() {
@@ -184,7 +184,13 @@ fn translate_type(t: &TypeName) -> io::Result<String> {
   Ok(base)
 }
 
-fn translate_value(v: &Value) -> String {
+fn translate_value(v: &Value, expected_rust_type: &str) -> String {
+  let float_cast = if expected_rust_type == "f32" || expected_rust_type == "f64" {
+    ".0"
+  } else {
+    ""
+  };
+
   match v {
     Value::Bool(b) => {
       if *b {
@@ -194,8 +200,8 @@ fn translate_value(v: &Value) -> String {
       }
     }
     Value::Float(f) => format!("{f}"),
-    Value::Int(i) => format!("{i}"),
-    Value::Uint(u) => format!("{u}"),
+    Value::Int(i) => format!("{i}{float_cast}"),
+    Value::Uint(u) => format!("{u}{float_cast}"),
     Value::String(v) => String::from_utf8(v.to_vec()).unwrap(),
   }
 }
