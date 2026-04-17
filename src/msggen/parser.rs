@@ -129,12 +129,13 @@ fn field(i: &str) -> IResult<&str, Item> {
   let (i, type_name) = type_spec(i)?;
   let (i, _) = space0(i)?;
   let (i, field_name) = identifier(i)?;
+  let (i, default_value) = opt(preceded(space0, value_spec)).parse(i)?;
   Ok((
     i,
     Item::Field {
       type_name,
       field_name,
-      default_value: None,
+      default_value,
     },
   ))
 }
@@ -328,6 +329,24 @@ fn msg_spec_test() {
     Ok(("", vec![(None, Some(Comment("# ".to_string())))]))
   );
   assert!(msg_spec("---\n").is_err());
+}
+
+#[test]
+fn msg_spec_defaults_test() {
+  assert_eq!(
+    msg_spec("int32 a -10\n"),
+    Ok(("", vec![(
+      Some(Item::Field {
+        type_name: TypeName {
+          base: BaseTypeName::Primitive { name: "int32".to_string() },
+          array_spec: None,
+        },
+        field_name: "a".to_string(),
+        default_value: Some(Value::Int(-10)),
+      }),
+      None
+    )]))
+  );
 }
 
 #[test]
