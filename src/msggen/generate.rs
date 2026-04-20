@@ -130,7 +130,7 @@ fn escape_keywords(id: &str) -> String {
   }
 }
 
-const RUST_BYTESTRING: &str = "String";
+const RUST_BYTESTRING: &str = "std::string::String";
 const RUST_WIDE_STRING: &str = "WString";
 
 fn translate_type(t: &TypeName) -> io::Result<String> {
