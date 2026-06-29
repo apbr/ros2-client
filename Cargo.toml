@@ -1,6 +1,6 @@
 [package]
 name = "ros2-client"
-version = "0.8.2" 
+version = "0.9.0" 
 edition = "2018"
 rust-version = "1.82.0"
 authors = ["Juhana Helovuo <juhana.helovuo@atostek.com>"]
@@ -39,7 +39,7 @@ pre-iron-gid = []
 
 # rustdds = {  path = "../RustDDS"  } # dev setting
 # rustdds = {   git = "https://github.com/Atostek/RustDDS.git" }
-rustdds = {  version = "~0.11.6"  } # release setting
+rustdds = {  version = "0.12"  } # release setting
 
 mio = "^0.6.23"
 mio-extras = "2.0.6"
@@ -66,16 +66,16 @@ tracing = "0.1.41"
 
 [dev-dependencies]
 log = "0.4"
-termion = "4.0.3"
 pretty_env_logger = "0.5.0"
 # turle_teleop
 log4rs = "1.2"
 test-case = "3.3.1"
 ctrlc = "3.1.6"
+ratatui = "0.29.0"
+crossterm = { version = "0.29.0", features = ["event-stream"] }
 
 # async examples
 smol = "2.0"
 async-io = "2.2.0"
-
-# tests
+async-ctrlc = "1.2"
 tokio = { version = "1", features=["rt", "macros", "time", "sync"]}
