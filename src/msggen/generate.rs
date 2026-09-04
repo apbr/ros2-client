@@ -41,8 +41,8 @@ pub fn print_struct_definition<W: io::Write>(
   // We only produce defaults for messages where each field has a default value,
   // otherwise we would need to define constructors instead of just implementing
   // Default. If we encounter any field without a default value, we set
-  // `default` to None, and skip all default values.
-  let mut default = Some(Vec::new());
+  // `defaults` to None, and skip all default values.
+  let mut defaults = Some(Vec::new());
 
   // Pretend the input ends with an empty line, so that comments trailing the last
   // item are flushed like any other comment block. The extra empty line is
@@ -81,15 +81,17 @@ pub fn print_struct_definition<W: io::Write>(
       ) => {
         let rust_type = translate_type(type_name)?;
         let mut line = format!("pub {} : {}, ", escape_keywords(field_name), rust_type);
-        if let Some(default) = default.as_mut() {
+        if let Some(defaults_vec) = defaults.as_mut() {
           if let Some(default_value) = default_value {
             let rust_value = translate_value(default_value, &rust_type);
-            default.push(format!("{}: {rust_value}", escape_keywords(field_name)));
-          } else if !default.is_empty() {
-            line.push_str(&format!(
-              "// no default value for field {field_name}, skipping previous defaults"
-            ));
-            default.clear();
+            defaults_vec.push(format!("{}: {rust_value}", escape_keywords(field_name)));
+          } else {
+            if !defaults_vec.is_empty() {
+              line.push_str(&format!(
+                "// no default value for field {field_name}, skipping previous defaults"
+              ));
+            }
+            defaults = None;
           }
         } else if default_value.is_some() {
           line.push_str(&format!(
@@ -148,12 +150,12 @@ pub fn print_struct_definition<W: io::Write>(
   }
   writeln!(w, "}}")?;
 
-  if let Some(default) = default {
-    if !default.is_empty() {
+  if let Some(defaults) = defaults {
+    if !defaults.is_empty() {
       writeln!(w, "impl Default for {name} {{")?;
       writeln!(w, "  fn default() -> Self {{")?;
       writeln!(w, "    Self {{")?;
-      for field in default {
+      for field in defaults {
         writeln!(w, "      {field},")?;
       }
       writeln!(w, "    }}")?;
