@@ -111,7 +111,7 @@ pub fn print_struct_definition<W: io::Write>(
       Target::Constants => &mut constants,
       Target::Fields => &mut fields,
     };
-    buffer.extend(pending.drain(..).map(|c| format!("/// {c}")));
+    buffer.extend(pending.drain(..).map(|c| format!("///{c}")));
     buffer.push(line);
     previous_target = target;
   }
@@ -297,12 +297,12 @@ float64 x
 float64 y
 ";
     let expected = "\
-/// # Message comment
-/// # second line
+/// Message comment
+/// second line
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Point {
-  /// # Property comment
-  /// # line 2
+  /// Property comment
+  /// line 2
   pub x : f64,
   pub y : f64,
 }
@@ -320,8 +320,8 @@ float64 x
 float64 y
 ";
     let expected = "\
-/// # Message comment
-/// # second line
+/// Message comment
+/// second line
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Point {
   pub x : f64,
@@ -342,8 +342,8 @@ float64 y
     let expected = "\
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Point {
-  /// # Property comment
-  /// # line 2
+  /// Property comment
+  /// line 2
   pub x : f64,
   pub y : f64,
 }
@@ -360,9 +360,9 @@ float64 y # Commenting y
     let expected = "\
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Point {
-  /// #Commenting x
+  ///Commenting x
   pub x : f64,
-  /// # Commenting y
+  /// Commenting y
   pub y : f64,
 }
 ";
@@ -377,9 +377,9 @@ int8 y=6 # Commenting y
 ";
     let expected = "\
 impl Point {
-  /// #Commenting x
+  ///Commenting x
   pub const x: i8 = 1;
-  /// # Commenting y
+  /// Commenting y
   pub const y: i8 = 6;
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
