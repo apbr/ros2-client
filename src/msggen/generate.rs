@@ -80,7 +80,7 @@ pub fn print_struct_definition<W: io::Write>(
         comment,
       ) => {
         let rust_type = translate_type(type_name)?;
-        let mut line = format!("pub {} : {}, ", escape_keywords(field_name), rust_type);
+        let mut line = format!("pub {} : {},", escape_keywords(field_name), rust_type);
         if let Some(defaults_vec) = defaults.as_mut() {
           if let Some(default_value) = default_value {
             let rust_value = translate_value(default_value, &rust_type);
