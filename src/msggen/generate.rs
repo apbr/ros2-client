@@ -251,3 +251,103 @@ fn translate_value(v: &Value, expected_rust_type: &str) -> String {
     Value::String(v) => String::from_utf8(v.to_vec()).unwrap(),
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use pretty_assertions::assert_eq;
+
+  use super::*;
+  use crate::msggen::parser::msg_spec;
+
+  /// Parse a `.msg` definition and generate the Rust code for it, so that test
+  /// cases can be written as input/output text pairs.
+  fn generate(name: &str, msg: &str) -> String {
+    let (rest, lines) = msg_spec(msg).expect("Parse error");
+    assert_eq!(rest, "", "Input was not parsed completely");
+    let mut out = Vec::new();
+    print_struct_definition(&mut out, name, &lines).expect("Generate error");
+    String::from_utf8(out).expect("Generated code was not valid UTF-8")
+  }
+
+  #[test]
+  fn simple_struct_test() {
+    let msg = "\
+float64 x
+float64 y
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  pub x : f64,
+  pub y : f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn comments_test() {
+    let msg = "\
+# Message comment
+# second line
+
+# Property comment
+# line 2
+float64 x
+float64 y
+";
+    let expected = "\
+// # Message comment
+// # second line
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  // # Property comment
+  // # line 2
+  pub x : f64,
+  pub y : f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn comments2_test() {
+    let msg = "\
+# Message comment
+# second line
+
+float64 x
+float64 y
+";
+    let expected = "\
+// # Message comment
+// # second line
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  pub x : f64,
+  pub y : f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn comments3_test() {
+    let msg = "\
+# Property comment
+# line 2
+float64 x
+float64 y
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  // # Property comment
+  // # line 2
+  pub x : f64,
+  pub y : f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+}
