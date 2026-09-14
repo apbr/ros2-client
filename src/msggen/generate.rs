@@ -67,7 +67,7 @@ pub fn print_struct_definition<W: io::Write>(
         let rust_value = translate_value(value, &rust_type);
         let mut line = format!("pub const {const_name}: {rust_type} = {rust_value};");
         if let Some(Comment(c)) = comment {
-          line.push_str(&format!(" // {c}"));
+          line.push_str(&format!(" /// {c}"));
         }
         (Target::Constants, line)
       }
@@ -100,7 +100,7 @@ pub fn print_struct_definition<W: io::Write>(
           ));
         }
         if let Some(Comment(c)) = comment {
-          line.push_str(&format!("// {c}"));
+          line.push_str(&format!("/// {c}"));
         }
         (Target::Fields, line)
       }
@@ -111,7 +111,7 @@ pub fn print_struct_definition<W: io::Write>(
       Target::Constants => &mut constants,
       Target::Fields => &mut fields,
     };
-    buffer.extend(pending.drain(..).map(|c| format!("// {c}")));
+    buffer.extend(pending.drain(..).map(|c| format!("/// {c}")));
     buffer.push(line);
     previous_target = target;
   }
@@ -297,12 +297,12 @@ float64 x
 float64 y
 ";
     let expected = "\
-// # Message comment
-// # second line
+/// # Message comment
+/// # second line
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Point {
-  // # Property comment
-  // # line 2
+  /// # Property comment
+  /// # line 2
   pub x : f64,
   pub y : f64,
 }
@@ -320,8 +320,8 @@ float64 x
 float64 y
 ";
     let expected = "\
-// # Message comment
-// # second line
+/// # Message comment
+/// # second line
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Point {
   pub x : f64,
@@ -342,8 +342,8 @@ float64 y
     let expected = "\
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Point {
-  // # Property comment
-  // # line 2
+  /// # Property comment
+  /// # line 2
   pub x : f64,
   pub y : f64,
 }
