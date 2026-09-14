@@ -63,12 +63,12 @@ pub fn print_struct_definition<W: io::Write>(
         }),
         comment,
       ) => {
+        if let Some(Comment(c)) = comment {
+          pending.push(c);
+        }
         let rust_type = translate_type(type_name)?;
         let rust_value = translate_value(value, &rust_type);
-        let mut line = format!("pub const {const_name}: {rust_type} = {rust_value};");
-        if let Some(Comment(c)) = comment {
-          line.push_str(&format!(" /// {c}"));
-        }
+        let line = format!("pub const {const_name}: {rust_type} = {rust_value};");
         (Target::Constants, line)
       }
       (
@@ -79,6 +79,9 @@ pub fn print_struct_definition<W: io::Write>(
         }),
         comment,
       ) => {
+        if let Some(Comment(c)) = comment {
+          pending.push(c);
+        }
         let rust_type = translate_type(type_name)?;
         let mut line = format!("pub {} : {},", escape_keywords(field_name), rust_type);
         if let Some(defaults_vec) = defaults.as_mut() {
@@ -98,9 +101,6 @@ pub fn print_struct_definition<W: io::Write>(
             "// no default value for a previous field, skipping default value for field \
              {field_name}"
           ));
-        }
-        if let Some(Comment(c)) = comment {
-          line.push_str(&format!("/// {c}"));
         }
         (Target::Fields, line)
       }
@@ -346,6 +346,44 @@ pub struct Point {
   /// # line 2
   pub x : f64,
   pub y : f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn comments_trailing_test() {
+    let msg = "\
+float64 x #Commenting x
+float64 y # Commenting y
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  /// #Commenting x
+  pub x : f64,
+  /// # Commenting y
+  pub y : f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn constant_comments_test() {
+    let msg = "\
+int8 x=1 #Commenting x
+int8 y=6 # Commenting y
+";
+    let expected = "\
+impl Point {
+  /// #Commenting x
+  pub const x: i8 = 1;
+  /// # Commenting y
+  pub const y: i8 = 6;
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
 }
 ";
     assert_eq!(generate("Point", msg), expected);
