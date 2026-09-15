@@ -388,4 +388,48 @@ pub struct Point {
 ";
     assert_eq!(generate("Point", msg), expected);
   }
+
+  #[test]
+  fn constant_test() {
+    let msg = "\
+uint8 RESULT_OK=0
+uint8 RESULT_FAILED=1
+uint8 result
+";
+    let expected = "\
+impl Res {
+  pub const RESULT_OK: u8 = 0;
+  pub const RESULT_FAILED: u8 = 1;
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Res {
+  pub result : u8,
+}
+";
+    assert_eq!(generate("Res", msg), expected);
+  }
+
+  #[test]
+  fn constant_inbetween_test() {
+    let msg = "\
+bool some
+uint8 RESULT_OK=0
+uint8 RESULT_OTHER=1
+uint8 RESULT_FAILED=2
+uint8 result
+";
+    let expected = "\
+impl Res {
+  pub const RESULT_OK: u8 = 0;
+  pub const RESULT_OTHER: u8 = 1;
+  pub const RESULT_FAILED: u8 = 2;
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Res {
+  pub some : bool,
+  pub result : u8,
+}
+";
+    assert_eq!(generate("Res", msg), expected);
+  }
 }
