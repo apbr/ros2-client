@@ -22,11 +22,12 @@ pub fn print_struct_definition<W: io::Write>(
   // buffers, so that all constants end up in an `impl` block and all fields in
   // the struct, regardless of their order in the input.
   //
-  // A comment at the end of an item, stays on that line. Comment-only lines
-  // are attached to the item that follows them. Alternatively an empty
-  // line ends such a comment block, so anything before the last empty line
-  // stays with whatever preceded it, and a comment block at the very top of the
-  // file stays above the generated struct.
+  // Comments at the end of an item or preceeding comment-only lines become
+  // doc comments for that item.
+  // An empty line ends a comment block, so it will not be attached as doc comment to the next
+  // item. Such a block is emitted as a plain comment after the previous item.
+  // A comment block followed by an empty line at the very top of the message file is attached to
+  // the generated struct.
   let mut header: Vec<String> = Vec::new();
   let mut constants: Vec<String> = Vec::new();
   let mut fields: Vec<String> = Vec::new();
@@ -54,7 +55,21 @@ pub fn print_struct_definition<W: io::Write>(
         pending.push(c);
         continue;
       }
-      (None, None) => (previous_target, String::new()),
+      (None, None) => {
+        // An empty line ends a comment block.
+        // It becomes a plain comment next to the previous item.
+        // (Or a doc comment for the struct if at the beginning of the file.)
+        if !pending.is_empty() {
+          let (buffer, prefix) = match previous_target {
+            Target::Header => (&mut header, "///"),
+            Target::Constants => (&mut constants, "//"),
+            Target::Fields => (&mut fields, "//"),
+          };
+          buffer.extend(pending.drain(..).map(|c| format!("{prefix}{c}")));
+          continue;
+        }
+        (previous_target, String::new())
+      }
       (
         Some(Item::Constant {
           type_name,
@@ -364,6 +379,60 @@ pub struct Point {
   pub x : f64,
   /// Commenting y
   pub y : f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn comments_gap_inbetween_test() {
+    let msg = "\
+float64 x
+#Random comment
+# random part 2
+
+# Commenting y
+# comment y part 2
+float64 y # Commenting y sameline
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  pub x : f64,
+  //Random comment
+  // random part 2
+  /// Commenting y
+  /// comment y part 2
+  /// Commenting y sameline
+  pub y : f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn comments_gap_inbetween2_test() {
+    let msg = "\
+int8 x=1
+#Random comment
+# random part 2
+
+# Commenting y
+# comment y part 2
+int8 y=2 # Commenting y sameline
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+}
+impl Point {
+  pub const x: i8 = 1;
+  //Random comment
+  // random part 2
+  /// Commenting y
+  /// comment y part 2
+  /// Commenting y sameline
+  pub const y: i8 = 2;
 }
 ";
     assert_eq!(generate("Point", msg), expected);
