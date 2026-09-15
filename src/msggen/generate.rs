@@ -127,6 +127,17 @@ pub fn print_struct_definition<W: io::Write>(
     writeln!(w, "{line}")?;
   }
 
+  writeln!(w, "#[derive(Debug, Serialize, Deserialize, Clone)]")?;
+  writeln!(w, "pub struct {name} {{")?;
+  for line in fields {
+    if line.is_empty() {
+      writeln!(w)?;
+    } else {
+      writeln!(w, "  {line}")?;
+    }
+  }
+  writeln!(w, "}}")?;
+
   if !constants.is_empty() {
     writeln!(w, "impl {name} {{")?;
     for line in constants {
@@ -138,17 +149,6 @@ pub fn print_struct_definition<W: io::Write>(
     }
     writeln!(w, "}}")?;
   }
-
-  writeln!(w, "#[derive(Debug, Serialize, Deserialize, Clone)]")?;
-  writeln!(w, "pub struct {name} {{")?;
-  for line in fields {
-    if line.is_empty() {
-      writeln!(w)?;
-    } else {
-      writeln!(w, "  {line}")?;
-    }
-  }
-  writeln!(w, "}}")?;
 
   if let Some(defaults) = defaults {
     if !defaults.is_empty() {
@@ -376,14 +376,14 @@ int8 x=1 #Commenting x
 int8 y=6 # Commenting y
 ";
     let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+}
 impl Point {
   ///Commenting x
   pub const x: i8 = 1;
   /// Commenting y
   pub const y: i8 = 6;
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Point {
 }
 ";
     assert_eq!(generate("Point", msg), expected);
@@ -397,13 +397,13 @@ uint8 RESULT_FAILED=1
 uint8 result
 ";
     let expected = "\
-impl Res {
-  pub const RESULT_OK: u8 = 0;
-  pub const RESULT_FAILED: u8 = 1;
-}
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Res {
   pub result : u8,
+}
+impl Res {
+  pub const RESULT_OK: u8 = 0;
+  pub const RESULT_FAILED: u8 = 1;
 }
 ";
     assert_eq!(generate("Res", msg), expected);
@@ -419,15 +419,15 @@ uint8 RESULT_FAILED=2
 uint8 result
 ";
     let expected = "\
-impl Res {
-  pub const RESULT_OK: u8 = 0;
-  pub const RESULT_OTHER: u8 = 1;
-  pub const RESULT_FAILED: u8 = 2;
-}
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Res {
   pub some : bool,
   pub result : u8,
+}
+impl Res {
+  pub const RESULT_OK: u8 = 0;
+  pub const RESULT_OTHER: u8 = 1;
+  pub const RESULT_FAILED: u8 = 2;
 }
 ";
     assert_eq!(generate("Res", msg), expected);
