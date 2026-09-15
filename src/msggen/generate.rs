@@ -247,7 +247,7 @@ fn translate_type(t: &TypeName) -> io::Result<String> {
 
 fn translate_value(v: &Value, expected_rust_type: &str) -> String {
   let float_cast = if expected_rust_type == "f32" || expected_rust_type == "f64" {
-    ".0"
+    expected_rust_type
   } else {
     ""
   };
@@ -260,7 +260,7 @@ fn translate_value(v: &Value, expected_rust_type: &str) -> String {
         "false".to_string()
       }
     }
-    Value::Float(f) => format!("{f}"),
+    Value::Float(f) => format!("{f}{float_cast}"),
     Value::Int(i) => format!("{i}{float_cast}"),
     Value::Uint(u) => format!("{u}{float_cast}"),
     Value::String(v) => String::from_utf8(v.to_vec()).unwrap(),
@@ -479,6 +479,28 @@ impl Res {
   }
 
   #[test]
+  fn constant_floats_test() {
+    let msg = "\
+float64 SOME=1.0
+float64 OTHER=1
+float64 PI=3.141592653589793
+float64 result
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Res {
+  pub result : f64,
+}
+impl Res {
+  pub const SOME: f64 = 1f64;
+  pub const OTHER: f64 = 1f64;
+  pub const PI: f64 = 3.141592653589793f64;
+}
+";
+    assert_eq!(generate("Res", msg), expected);
+  }
+
+  #[test]
   fn constant_inbetween_test() {
     let msg = "\
 bool some
@@ -497,6 +519,36 @@ impl Res {
   pub const RESULT_OK: u8 = 0;
   pub const RESULT_OTHER: u8 = 1;
   pub const RESULT_FAILED: u8 = 2;
+}
+";
+    assert_eq!(generate("Res", msg), expected);
+  }
+
+  #[test]
+  fn defaults_test() {
+    let msg = "\
+bool some true
+uint8 result 7
+float64 x 1
+float64 y 2.0
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Res {
+  pub some : bool,
+  pub result : u8,
+  pub x : f64,
+  pub y : f64,
+}
+impl Default for Res {
+  fn default() -> Self {
+    Self {
+      some: true,
+      result: 7,
+      x: 1f64,
+      y: 2f64,
+    }
+  }
 }
 ";
     assert_eq!(generate("Res", msg), expected);
