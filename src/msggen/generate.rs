@@ -2,113 +2,160 @@ use std::io;
 
 use super::parser::{ArraySpecifier, BaseTypeName, Comment, Item, TypeName, Value};
 
+/// Where a generated line goes
+#[derive(Clone, Copy, PartialEq)]
+enum Target {
+  /// Above everything
+  Header,
+  /// Inside the `impl` block for constants
+  Constants,
+  /// Inside the struct body
+  Fields,
+}
+
 pub fn print_struct_definition<W: io::Write>(
   w: &mut W,
   name: &str,
   lines: &[(Option<Item>, Option<Comment>)],
 ) -> io::Result<()> {
-  // assume that first we have only constants and comments
-  let is_not_field = |i: &Item| !matches!(i, Item::Field { .. });
+  // Collect constants and fields into separate
+  // buffers, so that all constants end up in an `impl` block and all fields in
+  // the struct, regardless of their order in the input.
+  //
+  // A comment at the end of an item, stays on that line. Comment-only lines
+  // are attached to the item that follows them. Alternatively an empty
+  // line ends such a comment block, so anything before the last empty line
+  // stays with whatever preceded it, and a comment block at the very top of the
+  // file stays above the generated struct.
+  let mut header: Vec<String> = Vec::new();
+  let mut constants: Vec<String> = Vec::new();
+  let mut fields: Vec<String> = Vec::new();
 
-  let not_yet = lines
-    .iter()
-    .take_while(|p| p.0.as_ref().is_none_or(is_not_field));
-  let got_field = lines
-    .iter()
-    .skip_while(|p| p.0.as_ref().is_none_or(is_not_field));
+  // Comment lines since the last item or empty line, held back until we know
+  // which item, and therefore which buffer, they belong to.
+  let mut pending: Vec<&str> = Vec::new();
+  // Where the most recent item went, i.e. where anything that documents no
+  // following item belongs to.
+  let mut previous_target = Target::Header;
 
-  let mut got_first_constant = false;
-  for (item, comment) in not_yet {
-    match (item, comment) {
-      (None, None) => writeln!(w)?, // empty line
-      (None, Some(Comment(c))) => writeln!(w, "// {c}")?,
-      (Some(item), comment_opt) => {
-        match item {
-          Item::Field { .. } => panic!("Why am i here?"),
-          Item::Constant {
-            type_name,
-            const_name,
-            value,
-          } => {
-            let rust_type = translate_type(type_name)?;
-            let rust_value = translate_value(value, &rust_type);
-            if !got_first_constant {
-              writeln!(w, "impl {name} {{")?;
-            }
-            got_first_constant = true;
-            writeln!(w, "  pub const {const_name}: {rust_type} = {rust_value};")?;
-          }
-        }
+  // We only produce defaults for messages where each field has a default value,
+  // otherwise we would need to define constructors instead of just implementing
+  // Default. If we encounter any field without a default value, we set
+  // `defaults` to None, and skip all default values.
+  let mut defaults = Some(Vec::new());
 
-        if let Some(Comment(c)) = comment_opt {
-          writeln!(w, "// {c}")?;
-        }
+  // Pretend the input ends with an empty line, so that comments trailing the last
+  // item are flushed like any other comment block. The extra empty line is
+  // trimmed away below.
+  let end_of_input = (None, None);
+  for (item, comment) in lines.iter().chain(std::iter::once(&end_of_input)) {
+    let (target, line) = match (item, comment) {
+      (None, Some(Comment(c))) => {
+        pending.push(c);
+        continue;
       }
+      (None, None) => (previous_target, String::new()),
+      (
+        Some(Item::Constant {
+          type_name,
+          const_name,
+          value,
+        }),
+        comment,
+      ) => {
+        let rust_type = translate_type(type_name)?;
+        let rust_value = translate_value(value, &rust_type);
+        let mut line = format!("pub const {const_name}: {rust_type} = {rust_value};");
+        if let Some(Comment(c)) = comment {
+          line.push_str(&format!(" // {c}"));
+        }
+        (Target::Constants, line)
+      }
+      (
+        Some(Item::Field {
+          type_name,
+          field_name,
+          default_value,
+        }),
+        comment,
+      ) => {
+        let rust_type = translate_type(type_name)?;
+        let mut line = format!("pub {} : {}, ", escape_keywords(field_name), rust_type);
+        if let Some(defaults_vec) = defaults.as_mut() {
+          if let Some(default_value) = default_value {
+            let rust_value = translate_value(default_value, &rust_type);
+            defaults_vec.push(format!("{}: {rust_value}", escape_keywords(field_name)));
+          } else {
+            if !defaults_vec.is_empty() {
+              line.push_str(&format!(
+                "// no default value for field {field_name}, skipping previous defaults"
+              ));
+            }
+            defaults = None;
+          }
+        } else if default_value.is_some() {
+          line.push_str(&format!(
+            "// no default value for a previous field, skipping default value for field \
+             {field_name}"
+          ));
+        }
+        if let Some(Comment(c)) = comment {
+          line.push_str(&format!("// {c}"));
+        }
+        (Target::Fields, line)
+      }
+    };
+
+    let buffer = match target {
+      Target::Header => &mut header,
+      Target::Constants => &mut constants,
+      Target::Fields => &mut fields,
+    };
+    buffer.extend(pending.drain(..).map(|c| format!("// {c}")));
+    buffer.push(line);
+    previous_target = target;
+  }
+
+  // Trailing empty lines are of no use in the generated code.
+  for buffer in [&mut header, &mut constants, &mut fields] {
+    while buffer.last().is_some_and(String::is_empty) {
+      buffer.pop();
     }
   }
-  if got_first_constant {
+
+  for line in header {
+    writeln!(w, "{line}")?;
+  }
+
+  if !constants.is_empty() {
+    writeln!(w, "impl {name} {{")?;
+    for line in constants {
+      if line.is_empty() {
+        writeln!(w)?;
+      } else {
+        writeln!(w, "  {line}")?;
+      }
+    }
     writeln!(w, "}}")?;
   }
 
   writeln!(w, "#[derive(Debug, Serialize, Deserialize, Clone)]")?;
   writeln!(w, "pub struct {name} {{")?;
-  // We only produce defaults for messages where each field has a default value, otherwise we would
-  // need to define constructors instead of just implementing Default.
-  // If we encounter any field without a default value, we set `default` to None, and skip all
-  // default values.
-  let mut default = Some(Vec::new());
-  for (item, comment) in got_field {
-    match (item, comment) {
-      (None, None) => writeln!(w)?, // empty line
-      (None, Some(Comment(c))) => writeln!(w, "  // {c}")?,
-      (Some(item), comment_opt) => {
-        write!(w, "  pub ")?;
-        match item {
-          Item::Field {
-            type_name,
-            field_name,
-            default_value,
-          } => {
-            let rust_type = translate_type(type_name)?;
-            write!(w, "{} : {}, ", escape_keywords(field_name), rust_type)?;
-            if let Some(default) = default.as_mut() {
-              if let Some(default_value) = default_value {
-                let rust_value = translate_value(default_value, &rust_type);
-                default.push(format!("{}: {rust_value}", escape_keywords(field_name)));
-              } else {
-                if !default.is_empty() {
-                  write!(w, "// no default value for field {field_name}, skipping previous defaults")?;
-                  default.clear();
-                }
-              }
-            } else if default_value.is_some() {
-              write!(
-                w,
-                "// no default value for a previous field, skipping default value for field {field_name}"
-              )?;
-            }
-          }
-          Item::Constant { const_name, .. } => write!(
-            w,
-            "// skipped constant {const_name} in the middle of struct"
-          )?,
-        }
-
-        if let Some(Comment(c)) = comment_opt {
-          writeln!(w, "// {c}")?;
-        } else {
-          writeln!(w)?;
-        }
-      }
+  for line in fields {
+    if line.is_empty() {
+      writeln!(w)?;
+    } else {
+      writeln!(w, "  {line}")?;
     }
   }
   writeln!(w, "}}")?;
-  if let Some(default) = default {
-    if !default.is_empty() {
+
+  if let Some(defaults) = defaults {
+    if !defaults.is_empty() {
       writeln!(w, "impl Default for {name} {{")?;
       writeln!(w, "  fn default() -> Self {{")?;
       writeln!(w, "    Self {{")?;
-      for field in default {
+      for field in defaults {
         writeln!(w, "      {field},")?;
       }
       writeln!(w, "    }}")?;
