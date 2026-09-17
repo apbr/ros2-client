@@ -22,7 +22,7 @@ pub fn print_struct_definition<W: io::Write>(
   // buffers, so that all constants end up in an `impl` block and all fields in
   // the struct, regardless of their order in the input.
   //
-  // Comments at the end of an item or preceeding comment-only lines become
+  // Comments at the end of an item or preceding comment-only lines become
   // doc comments for that item.
   // An empty line ends a comment block, so it will not be attached as doc comment to the next
   // item. Such a block is emitted as a plain comment after the previous item.
