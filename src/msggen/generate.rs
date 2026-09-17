@@ -98,7 +98,7 @@ pub fn print_struct_definition<W: io::Write>(
           pending.push(c);
         }
         let rust_type = translate_type(type_name)?;
-        let mut line = format!("pub {} : {},", escape_keywords(field_name), rust_type);
+        let mut line = format!("pub {}: {},", escape_keywords(field_name), rust_type);
         if let Some(defaults_vec) = defaults.as_mut() {
           if let Some(default_value) = default_value {
             let rust_value = translate_value(default_value, &rust_type);
@@ -293,8 +293,8 @@ float64 y
     let expected = "\
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Point {
-  pub x : f64,
-  pub y : f64,
+  pub x: f64,
+  pub y: f64,
 }
 ";
     assert_eq!(generate("Point", msg), expected);
@@ -318,8 +318,8 @@ float64 y
 pub struct Point {
   /// Property comment
   /// line 2
-  pub x : f64,
-  pub y : f64,
+  pub x: f64,
+  pub y: f64,
 }
 ";
     assert_eq!(generate("Point", msg), expected);
@@ -339,8 +339,8 @@ float64 y
 /// second line
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Point {
-  pub x : f64,
-  pub y : f64,
+  pub x: f64,
+  pub y: f64,
 }
 ";
     assert_eq!(generate("Point", msg), expected);
@@ -359,8 +359,8 @@ float64 y
 pub struct Point {
   /// Property comment
   /// line 2
-  pub x : f64,
-  pub y : f64,
+  pub x: f64,
+  pub y: f64,
 }
 ";
     assert_eq!(generate("Point", msg), expected);
@@ -376,9 +376,9 @@ float64 y # Commenting y
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Point {
   ///Commenting x
-  pub x : f64,
+  pub x: f64,
   /// Commenting y
-  pub y : f64,
+  pub y: f64,
 }
 ";
     assert_eq!(generate("Point", msg), expected);
@@ -398,13 +398,13 @@ float64 y # Commenting y sameline
     let expected = "\
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Point {
-  pub x : f64,
+  pub x: f64,
   //Random comment
   // random part 2
   /// Commenting y
   /// comment y part 2
   /// Commenting y sameline
-  pub y : f64,
+  pub y: f64,
 }
 ";
     assert_eq!(generate("Point", msg), expected);
@@ -468,7 +468,7 @@ uint8 result
     let expected = "\
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Res {
-  pub result : u8,
+  pub result: u8,
 }
 impl Res {
   pub const RESULT_OK: u8 = 0;
@@ -489,7 +489,7 @@ float64 result
     let expected = "\
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Res {
-  pub result : f64,
+  pub result: f64,
 }
 impl Res {
   pub const SOME: f64 = 1f64;
@@ -512,8 +512,8 @@ uint8 result
     let expected = "\
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Res {
-  pub some : bool,
-  pub result : u8,
+  pub some: bool,
+  pub result: u8,
 }
 impl Res {
   pub const RESULT_OK: u8 = 0;
@@ -535,10 +535,10 @@ float64 y 2.0
     let expected = "\
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Res {
-  pub some : bool,
-  pub result : u8,
-  pub x : f64,
-  pub y : f64,
+  pub some: bool,
+  pub result: u8,
+  pub x: f64,
+  pub y: f64,
 }
 impl Default for Res {
   fn default() -> Self {
