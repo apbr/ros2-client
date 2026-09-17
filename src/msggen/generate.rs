@@ -60,12 +60,12 @@ pub fn print_struct_definition<W: io::Write>(
         // It becomes a plain comment next to the previous item.
         // (Or a doc comment for the struct if at the beginning of the file.)
         if !pending.is_empty() {
-          let (buffer, prefix) = match previous_target {
-            Target::Header => (&mut header, "///"),
-            Target::Constants => (&mut constants, "//"),
-            Target::Fields => (&mut fields, "//"),
+          let buffer = match previous_target {
+            Target::Header => &mut header,
+            Target::Constants => &mut constants,
+            Target::Fields => &mut fields,
           };
-          buffer.extend(pending.drain(..).map(|c| format!("{prefix}{c}")));
+          add_comments(buffer, &mut pending, previous_target == Target::Header);
           continue;
         }
         (previous_target, String::new())
@@ -126,7 +126,7 @@ pub fn print_struct_definition<W: io::Write>(
       Target::Constants => &mut constants,
       Target::Fields => &mut fields,
     };
-    buffer.extend(pending.drain(..).map(|c| format!("///{c}")));
+    add_comments(buffer, &mut pending, true);
     buffer.push(line);
     previous_target = target;
   }
@@ -179,6 +179,12 @@ pub fn print_struct_definition<W: io::Write>(
     }
   }
   Ok(())
+}
+
+/// Adds comments from `pending` to `buffer` and clears `pending`.
+fn add_comments(buffer: &mut Vec<String>, pending: &mut Vec<&str>, is_doc_comment: bool) {
+  let prefix = if is_doc_comment { "///" } else { "//" };
+  buffer.extend(pending.drain(..).map(|c| format!("{prefix}{c}")));
 }
 
 fn escape_keywords(id: &str) -> String {
