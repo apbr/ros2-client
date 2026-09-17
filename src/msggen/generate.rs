@@ -184,7 +184,13 @@ pub fn print_struct_definition<W: io::Write>(
 /// Adds comments from `pending` to `buffer` and clears `pending`.
 fn add_comments(buffer: &mut Vec<String>, pending: &mut Vec<&str>, is_doc_comment: bool) {
   let prefix = if is_doc_comment { "///" } else { "//" };
-  buffer.extend(pending.drain(..).map(|c| format!("{prefix}{c}")));
+  buffer.extend(pending.drain(..).map(|c| {
+    if c.starts_with('/') {
+      format!("{prefix} {c}")
+    } else {
+      format!("{prefix}{c}")
+    }
+  }));
 }
 
 fn escape_keywords(id: &str) -> String {
@@ -439,6 +445,27 @@ impl Point {
   /// comment y part 2
   /// Commenting y sameline
   pub const y: i8 = 2;
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn comments_leading_slash_test() {
+    let msg = "\
+#/foo
+
+#/bar
+int8 x
+#/baz
+";
+    let expected = "\
+/// /foo
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  /// /bar
+  pub x: i8,
+  // /baz
 }
 ";
     assert_eq!(generate("Point", msg), expected);
