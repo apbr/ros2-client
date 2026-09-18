@@ -248,8 +248,10 @@ fn value_spec(i: &str) -> IResult<&str, Value> {
   .parse(i)
 }
 
+/// Parses a comment, e.g. `# Hello`. The leading `#` is stripped, so the
+/// resulting [`Comment`] contains only the text after it.
 fn comment(i: &str) -> IResult<&str, Comment> {
-  map(recognize(pair(tag("#"), not_line_ending)), |s: &str| {
+  map(preceded(tag("#"), not_line_ending), |s: &str| {
     Comment(s.to_string())
   })
   .parse(i)
@@ -292,11 +294,11 @@ fn decimal(input: &str) -> IResult<&str, &str> {
 
 #[test]
 fn comment_test() {
-  assert_eq!(comment("#\n"), Ok(("\n", Comment("#".to_string()))));
-  assert_eq!(comment("# \n"), Ok(("\n", Comment("# ".to_string()))));
+  assert_eq!(comment("#\n"), Ok(("\n", Comment("".to_string()))));
+  assert_eq!(comment("# \n"), Ok(("\n", Comment(" ".to_string()))));
   assert_eq!(
     comment("# This message:\n#"),
-    Ok(("\n#", Comment("# This message:".to_string())))
+    Ok(("\n#", Comment(" This message:".to_string())))
   );
 }
 
@@ -326,7 +328,7 @@ fn msg_spec_test() {
   //     Item::Comment { bytes: "#\n".to_string() }] )));
   assert_eq!(
     msg_spec("# \n"),
-    Ok(("", vec![(None, Some(Comment("# ".to_string())))]))
+    Ok(("", vec![(None, Some(Comment(" ".to_string())))]))
   );
   assert!(msg_spec("---\n").is_err());
 }
@@ -406,7 +408,7 @@ int32[] sequence
     action_spec(action),
     Ok(("", ActionSpec {
       goal: vec![
-          (None, Some(Comment("# Goal".to_string()))),
+          (None, Some(Comment(" Goal".to_string()))),
         (Some(Item::Field {
           type_name: TypeName {
             base: BaseTypeName::Primitive { name: "int32".to_string() },
@@ -417,7 +419,7 @@ int32[] sequence
         }), None),
       ],
       result: vec![
-          (None, Some(Comment("# Result".to_string()))),
+          (None, Some(Comment(" Result".to_string()))),
         (Some(Item::Field {
           type_name: TypeName {
             base: BaseTypeName::Primitive { name: "int32".to_string() },
@@ -428,7 +430,7 @@ int32[] sequence
         }), None),
       ],
       feedback: vec![
-          (None, Some(Comment("# Feedback".to_string()))),
+          (None, Some(Comment(" Feedback".to_string()))),
         (Some(Item::Field {
           type_name: TypeName {
             base: BaseTypeName::Primitive { name: "int32".to_string() },

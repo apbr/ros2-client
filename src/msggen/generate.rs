@@ -22,11 +22,12 @@ pub fn print_struct_definition<W: io::Write>(
   // buffers, so that all constants end up in an `impl` block and all fields in
   // the struct, regardless of their order in the input.
   //
-  // A comment at the end of an item, stays on that line. Comment-only lines
-  // are attached to the item that follows them. Alternatively an empty
-  // line ends such a comment block, so anything before the last empty line
-  // stays with whatever preceded it, and a comment block at the very top of the
-  // file stays above the generated struct.
+  // Comments at the end of an item or preceding comment-only lines become
+  // doc comments for that item.
+  // An empty line ends a comment block, so it will not be attached as doc comment to the next
+  // item. Such a block is emitted as a plain comment after the previous item.
+  // A comment block followed by an empty line at the very top of the message file is attached to
+  // the generated struct.
   let mut header: Vec<String> = Vec::new();
   let mut constants: Vec<String> = Vec::new();
   let mut fields: Vec<String> = Vec::new();
@@ -54,7 +55,21 @@ pub fn print_struct_definition<W: io::Write>(
         pending.push(c);
         continue;
       }
-      (None, None) => (previous_target, String::new()),
+      (None, None) => {
+        // An empty line ends a comment block.
+        // It becomes a plain comment next to the previous item.
+        // (Or a doc comment for the struct if at the beginning of the file.)
+        if !pending.is_empty() {
+          let buffer = match previous_target {
+            Target::Header => &mut header,
+            Target::Constants => &mut constants,
+            Target::Fields => &mut fields,
+          };
+          add_comments(buffer, &mut pending, previous_target == Target::Header);
+          continue;
+        }
+        (previous_target, String::new())
+      }
       (
         Some(Item::Constant {
           type_name,
@@ -63,12 +78,12 @@ pub fn print_struct_definition<W: io::Write>(
         }),
         comment,
       ) => {
+        if let Some(Comment(c)) = comment {
+          pending.push(c);
+        }
         let rust_type = translate_type(type_name)?;
         let rust_value = translate_value(value, &rust_type);
-        let mut line = format!("pub const {const_name}: {rust_type} = {rust_value};");
-        if let Some(Comment(c)) = comment {
-          line.push_str(&format!(" // {c}"));
-        }
+        let line = format!("pub const {const_name}: {rust_type} = {rust_value};");
         (Target::Constants, line)
       }
       (
@@ -79,8 +94,11 @@ pub fn print_struct_definition<W: io::Write>(
         }),
         comment,
       ) => {
+        if let Some(Comment(c)) = comment {
+          pending.push(c);
+        }
         let rust_type = translate_type(type_name)?;
-        let mut line = format!("pub {} : {}, ", escape_keywords(field_name), rust_type);
+        let mut line = format!("pub {}: {},", escape_keywords(field_name), rust_type);
         if let Some(defaults_vec) = defaults.as_mut() {
           if let Some(default_value) = default_value {
             let rust_value = translate_value(default_value, &rust_type);
@@ -99,9 +117,6 @@ pub fn print_struct_definition<W: io::Write>(
              {field_name}"
           ));
         }
-        if let Some(Comment(c)) = comment {
-          line.push_str(&format!("// {c}"));
-        }
         (Target::Fields, line)
       }
     };
@@ -111,7 +126,7 @@ pub fn print_struct_definition<W: io::Write>(
       Target::Constants => &mut constants,
       Target::Fields => &mut fields,
     };
-    buffer.extend(pending.drain(..).map(|c| format!("// {c}")));
+    add_comments(buffer, &mut pending, true);
     buffer.push(line);
     previous_target = target;
   }
@@ -127,6 +142,17 @@ pub fn print_struct_definition<W: io::Write>(
     writeln!(w, "{line}")?;
   }
 
+  writeln!(w, "#[derive(Debug, Serialize, Deserialize, Clone)]")?;
+  writeln!(w, "pub struct {name} {{")?;
+  for line in fields {
+    if line.is_empty() {
+      writeln!(w)?;
+    } else {
+      writeln!(w, "  {line}")?;
+    }
+  }
+  writeln!(w, "}}")?;
+
   if !constants.is_empty() {
     writeln!(w, "impl {name} {{")?;
     for line in constants {
@@ -138,17 +164,6 @@ pub fn print_struct_definition<W: io::Write>(
     }
     writeln!(w, "}}")?;
   }
-
-  writeln!(w, "#[derive(Debug, Serialize, Deserialize, Clone)]")?;
-  writeln!(w, "pub struct {name} {{")?;
-  for line in fields {
-    if line.is_empty() {
-      writeln!(w)?;
-    } else {
-      writeln!(w, "  {line}")?;
-    }
-  }
-  writeln!(w, "}}")?;
 
   if let Some(defaults) = defaults {
     if !defaults.is_empty() {
@@ -164,6 +179,45 @@ pub fn print_struct_definition<W: io::Write>(
     }
   }
   Ok(())
+}
+
+/// Adds comments from `pending` to `buffer` and clears `pending`.
+fn add_comments(buffer: &mut Vec<String>, pending: &mut Vec<&str>, is_doc_comment: bool) {
+  let prefix = if is_doc_comment { "///" } else { "//" };
+  let get_indent = |c: &str| c.len() - c.trim_start().len();
+
+  // Common indentation (rustdoc ignores indentation common to
+  // all lines, so actual indentation only counts relative to that)
+  let common = pending
+    .iter()
+    .filter(|c| !c.trim().is_empty())
+    .map(|c| get_indent(c))
+    .min()
+    .unwrap_or(0);
+
+  // Wrap indented blocks in a ````text fence, so that rustdoc doesn't interpret them as doc tests.
+  const MIN_CODE_BLOCK_INDENT: usize = 4;
+  let fence = if is_doc_comment
+    && pending.iter().any(|c| {
+      !c.trim().is_empty()
+        && (get_indent(c) >= common + MIN_CODE_BLOCK_INDENT || c.trim_start().starts_with("```"))
+    }) {
+    Some(format!("{}{}````", prefix, " ".repeat(common)))
+  } else {
+    None
+  };
+
+  if let Some(fence) = &fence {
+    buffer.push(format!("{fence}text"));
+  }
+  buffer.extend(pending.drain(..).map(|c| {
+    if c.starts_with('/') {
+      format!("{prefix} {c}")
+    } else {
+      format!("{prefix}{c}")
+    }
+  }));
+  buffer.extend(fence);
 }
 
 fn escape_keywords(id: &str) -> String {
@@ -232,7 +286,7 @@ fn translate_type(t: &TypeName) -> io::Result<String> {
 
 fn translate_value(v: &Value, expected_rust_type: &str) -> String {
   let float_cast = if expected_rust_type == "f32" || expected_rust_type == "f64" {
-    ".0"
+    expected_rust_type
   } else {
     ""
   };
@@ -245,9 +299,439 @@ fn translate_value(v: &Value, expected_rust_type: &str) -> String {
         "false".to_string()
       }
     }
-    Value::Float(f) => format!("{f}"),
+    Value::Float(f) => format!("{f}{float_cast}"),
     Value::Int(i) => format!("{i}{float_cast}"),
     Value::Uint(u) => format!("{u}{float_cast}"),
     Value::String(v) => String::from_utf8(v.to_vec()).unwrap(),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use pretty_assertions::assert_eq;
+
+  use super::*;
+  use crate::msggen::parser::msg_spec;
+
+  /// Parse a `.msg` definition and generate the Rust code for it, so that test
+  /// cases can be written as input/output text pairs.
+  fn generate(name: &str, msg: &str) -> String {
+    let (rest, lines) = msg_spec(msg).expect("Parse error");
+    assert_eq!(rest, "", "Input was not parsed completely");
+    let mut out = Vec::new();
+    print_struct_definition(&mut out, name, &lines).expect("Generate error");
+    String::from_utf8(out).expect("Generated code was not valid UTF-8")
+  }
+
+  #[test]
+  fn simple_struct_test() {
+    let msg = "\
+float64 x
+float64 y
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  pub x: f64,
+  pub y: f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn comments_test() {
+    let msg = "\
+# Message comment
+# second line
+
+# Property comment
+# line 2
+float64 x
+float64 y
+";
+    let expected = "\
+/// Message comment
+/// second line
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  /// Property comment
+  /// line 2
+  pub x: f64,
+  pub y: f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn comments2_test() {
+    let msg = "\
+# Message comment
+# second line
+
+float64 x
+float64 y
+";
+    let expected = "\
+/// Message comment
+/// second line
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  pub x: f64,
+  pub y: f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn comments3_test() {
+    let msg = "\
+# Property comment
+# line 2
+float64 x
+float64 y
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  /// Property comment
+  /// line 2
+  pub x: f64,
+  pub y: f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn comments_trailing_test() {
+    let msg = "\
+float64 x #Commenting x
+float64 y # Commenting y
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  ///Commenting x
+  pub x: f64,
+  /// Commenting y
+  pub y: f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn comments_gap_inbetween_test() {
+    let msg = "\
+float64 x
+#Random comment
+# random part 2
+
+# Commenting y
+# comment y part 2
+float64 y # Commenting y sameline
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  pub x: f64,
+  //Random comment
+  // random part 2
+  /// Commenting y
+  /// comment y part 2
+  /// Commenting y sameline
+  pub y: f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn comments_gap_inbetween2_test() {
+    let msg = "\
+int8 x=1
+#Random comment
+# random part 2
+
+# Commenting y
+# comment y part 2
+int8 y=2 # Commenting y sameline
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+}
+impl Point {
+  pub const x: i8 = 1;
+  //Random comment
+  // random part 2
+  /// Commenting y
+  /// comment y part 2
+  /// Commenting y sameline
+  pub const y: i8 = 2;
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn comments_leading_slash_test() {
+    let msg = "\
+#/foo
+
+#/bar
+int8 x
+#/baz
+";
+    let expected = "\
+/// /foo
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  /// /bar
+  pub x: i8,
+  // /baz
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn constant_comments_test() {
+    let msg = "\
+int8 x=1 #Commenting x
+int8 y=6 # Commenting y
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+}
+impl Point {
+  ///Commenting x
+  pub const x: i8 = 1;
+  /// Commenting y
+  pub const y: i8 = 6;
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn constant_test() {
+    let msg = "\
+uint8 RESULT_OK=0
+uint8 RESULT_FAILED=1
+uint8 result
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Res {
+  pub result: u8,
+}
+impl Res {
+  pub const RESULT_OK: u8 = 0;
+  pub const RESULT_FAILED: u8 = 1;
+}
+";
+    assert_eq!(generate("Res", msg), expected);
+  }
+
+  #[test]
+  fn constant_floats_test() {
+    let msg = "\
+float64 SOME=1.0
+float64 OTHER=1
+float64 PI=3.141592653589793
+float64 result
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Res {
+  pub result: f64,
+}
+impl Res {
+  pub const SOME: f64 = 1f64;
+  pub const OTHER: f64 = 1f64;
+  pub const PI: f64 = 3.141592653589793f64;
+}
+";
+    assert_eq!(generate("Res", msg), expected);
+  }
+
+  #[test]
+  fn constant_inbetween_test() {
+    let msg = "\
+bool some
+uint8 RESULT_OK=0
+uint8 RESULT_OTHER=1
+uint8 RESULT_FAILED=2
+uint8 result
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Res {
+  pub some: bool,
+  pub result: u8,
+}
+impl Res {
+  pub const RESULT_OK: u8 = 0;
+  pub const RESULT_OTHER: u8 = 1;
+  pub const RESULT_FAILED: u8 = 2;
+}
+";
+    assert_eq!(generate("Res", msg), expected);
+  }
+
+  #[test]
+  fn defaults_test() {
+    let msg = "\
+bool some true
+uint8 result 7
+float64 x 1
+float64 y 2.0
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Res {
+  pub some: bool,
+  pub result: u8,
+  pub x: f64,
+  pub y: f64,
+}
+impl Default for Res {
+  fn default() -> Self {
+    Self {
+      some: true,
+      result: 7,
+      x: 1f64,
+      y: 2f64,
+    }
+  }
+}
+";
+    assert_eq!(generate("Res", msg), expected);
+  }
+
+  #[test]
+  fn indented_comment_block_test() {
+    let msg = "\
+# Intrinsic camera matrix:
+#
+#     [fx  0 cx]
+#     [ 0 fy cy]
+float64[9] k
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CameraInfo {
+  /// ````text
+  /// Intrinsic camera matrix:
+  ///
+  ///     [fx  0 cx]
+  ///     [ 0 fy cy]
+  /// ````
+  pub k: [f64;9],
+}
+";
+    assert_eq!(generate("CameraInfo", msg), expected);
+  }
+
+  #[test]
+  fn indented_comment_block_ends_test() {
+    let msg = "\
+# Header comment:
+#
+#     indented
+#
+# back to text
+
+float64 x
+";
+    let expected = "\
+/// ````text
+/// Header comment:
+///
+///     indented
+///
+/// back to text
+/// ````
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  pub x: f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn indented_comment_block_trailing_empty_line_test() {
+    let msg = "\
+# Comment:
+#
+#     indented
+#
+float64 x
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  /// ````text
+  /// Comment:
+  ///
+  ///     indented
+  ///
+  /// ````
+  pub x: f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn indented_paragraph_continuation_test() {
+    let msg = "\
+# Some text
+#     continued with indentation
+float64 x
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  /// ````text
+  /// Some text
+  ///     continued with indentation
+  /// ````
+  pub x: f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn comment_code_fence_test() {
+    let msg = "\
+# Example:
+# ```
+# not rust
+# ```
+# and ```rust is left alone
+float64 x
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  /// ````text
+  /// Example:
+  /// ```
+  /// not rust
+  /// ```
+  /// and ```rust is left alone
+  /// ````
+  pub x: f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
   }
 }
