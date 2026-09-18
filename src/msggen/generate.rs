@@ -184,6 +184,32 @@ pub fn print_struct_definition<W: io::Write>(
 /// Adds comments from `pending` to `buffer` and clears `pending`.
 fn add_comments(buffer: &mut Vec<String>, pending: &mut Vec<&str>, is_doc_comment: bool) {
   let prefix = if is_doc_comment { "///" } else { "//" };
+  let get_indent = |c: &str| c.len() - c.trim_start().len();
+
+  // Common indentation (rustdoc ignores indentation common to
+  // all lines, so actual indentation only counts relative to that)
+  let common = pending
+    .iter()
+    .filter(|c| !c.trim().is_empty())
+    .map(|c| get_indent(c))
+    .min()
+    .unwrap_or(0);
+
+  // Wrap indented blocks in a ````text fence, so that rustdoc doesn't interpret them as doc tests.
+  const MIN_CODE_BLOCK_INDENT: usize = 4;
+  let fence = if is_doc_comment
+    && pending.iter().any(|c| {
+      !c.trim().is_empty()
+        && (get_indent(c) >= common + MIN_CODE_BLOCK_INDENT || c.trim_start().starts_with("```"))
+    }) {
+    Some(format!("{}{}````", prefix, " ".repeat(common)))
+  } else {
+    None
+  };
+
+  if let Some(fence) = &fence {
+    buffer.push(format!("{fence}text"));
+  }
   buffer.extend(pending.drain(..).map(|c| {
     if c.starts_with('/') {
       format!("{prefix} {c}")
@@ -191,6 +217,7 @@ fn add_comments(buffer: &mut Vec<String>, pending: &mut Vec<&str>, is_doc_commen
       format!("{prefix}{c}")
     }
   }));
+  buffer.extend(fence);
 }
 
 fn escape_keywords(id: &str) -> String {
@@ -585,5 +612,126 @@ impl Default for Res {
 }
 ";
     assert_eq!(generate("Res", msg), expected);
+  }
+
+  #[test]
+  fn indented_comment_block_test() {
+    let msg = "\
+# Intrinsic camera matrix:
+#
+#     [fx  0 cx]
+#     [ 0 fy cy]
+float64[9] k
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CameraInfo {
+  /// ````text
+  /// Intrinsic camera matrix:
+  ///
+  ///     [fx  0 cx]
+  ///     [ 0 fy cy]
+  /// ````
+  pub k: [f64;9],
+}
+";
+    assert_eq!(generate("CameraInfo", msg), expected);
+  }
+
+  #[test]
+  fn indented_comment_block_ends_test() {
+    let msg = "\
+# Header comment:
+#
+#     indented
+#
+# back to text
+
+float64 x
+";
+    let expected = "\
+/// ````text
+/// Header comment:
+///
+///     indented
+///
+/// back to text
+/// ````
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  pub x: f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn indented_comment_block_trailing_empty_line_test() {
+    let msg = "\
+# Comment:
+#
+#     indented
+#
+float64 x
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  /// ````text
+  /// Comment:
+  ///
+  ///     indented
+  ///
+  /// ````
+  pub x: f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn indented_paragraph_continuation_test() {
+    let msg = "\
+# Some text
+#     continued with indentation
+float64 x
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  /// ````text
+  /// Some text
+  ///     continued with indentation
+  /// ````
+  pub x: f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
+  }
+
+  #[test]
+  fn comment_code_fence_test() {
+    let msg = "\
+# Example:
+# ```
+# not rust
+# ```
+# and ```rust is left alone
+float64 x
+";
+    let expected = "\
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Point {
+  /// ````text
+  /// Example:
+  /// ```
+  /// not rust
+  /// ```
+  /// and ```rust is left alone
+  /// ````
+  pub x: f64,
+}
+";
+    assert_eq!(generate("Point", msg), expected);
   }
 }
